@@ -22,7 +22,10 @@ Dreamflow
 ├── DreamflowBuilder       # Modular prompt construction
 ├── DreamflowLog           # Daily reflection results
 ├── MorningDigest          # Weekly aggregation
+├── MorningDigestGenerator # Digest generation from logs
+├── DigestDelivery         # Notifications & sharing
 ├── DreamflowStorage       # Persistent log storage
+├── DigestCard/DigestView  # SwiftUI presentation
 └── Connector Hooks        # Phase-aware integrations
 ```
 
@@ -57,6 +60,14 @@ Dreamflow
 - Customizable prompt templates
 - Configurable inference fields
 - Morning digest generation
+
+✅ **Digest Delivery**
+- Local push notifications
+- Rich notification previews
+- Share digest via activity sheet
+- Markdown export for journaling
+- Haptic feedback on interactions
+- Background sync (CloudKit ready)
 
 ## Quick Start
 
@@ -123,7 +134,8 @@ let customDreamflow = DreamflowRunner(
 ### 4. Generate Morning Digest
 
 ```swift
-// Aggregate past week into digestTask {
+// Aggregate past week into digest
+Task {
     let digest = try await dreamflow.generateMorningDigest(days: 7)
 
     print("Headline: \(digest.headline)")
@@ -135,6 +147,70 @@ let customDreamflow = DreamflowRunner(
     print("\nActionable Items:")
     for item in digest.actionableItems {
         print("  • \(item)")
+    }
+}
+```
+
+### 5. Deliver Digest via Notifications
+
+```swift
+import DigestDelivery
+
+// Initialize delivery system
+let delivery = DigestDelivery.shared
+
+// Request notification permissions
+let granted = await delivery.requestNotificationPermission()
+
+if granted {
+    // Generate digest
+    let digest = try await dreamflow.generateMorningDigest(days: 7)
+
+    // Schedule notification for next morning
+    try await delivery.scheduleNotification(for: digest)
+
+    // Or send immediately
+    delivery.sendNow(digest: digest)
+}
+```
+
+### 6. Share Digest
+
+```swift
+// From a UIViewController
+let digest = try await dreamflow.generateMorningDigest()
+
+delivery.shareDigest(
+    digest,
+    from: self.viewController,
+    sourceView: shareButton
+)
+
+// Export as markdown file
+let fileURL = try await delivery.exportAsMarkdown(digest)
+print("Exported to: \(fileURL.path)")
+```
+
+### 7. Integrated Delivery Flow
+
+```swift
+// Complete flow: run Dreamflow → generate digest → deliver notification
+Task {
+    do {
+        // 1. Run nightly Dreamflow
+        let log = try await dreamflow.runDreamflow(for: Date())
+        print("✅ Dreamflow complete: \(log.summary)")
+
+        // 2. Generate morning digest
+        let digest = try await dreamflow.generateMorningDigest(days: 7)
+
+        // 3. Deliver via notification
+        await delivery.deliverAfterDreamflow(digest, immediate: false)
+
+        print("✅ Digest scheduled for morning delivery")
+
+    } catch {
+        print("❌ Error: \(error)")
     }
 }
 ```
@@ -255,6 +331,83 @@ Generate prompts for LLM inference.
 
 **Returns:** Prompts structure with formatted text
 
+### DigestDelivery
+
+#### `requestNotificationPermission() async -> Bool`
+
+Request user permission for notifications.
+
+**Returns:** `true` if granted, `false` otherwise
+
+**Example:**
+```swift
+let granted = await delivery.requestNotificationPermission()
+```
+
+#### `scheduleNotification(for digest: MorningDigest) async throws`
+
+Schedule a notification for next morning.
+
+**Parameters:**
+- `digest`: MorningDigest to deliver
+
+**Throws:** `DigestDeliveryError` if scheduling fails
+
+**Example:**
+```swift
+try await delivery.scheduleNotification(for: digest)
+```
+
+#### `sendNow(digest: MorningDigest)`
+
+Send notification immediately.
+
+**Parameters:**
+- `digest`: MorningDigest to send
+
+**Example:**
+```swift
+delivery.sendNow(digest: digest)
+```
+
+#### `shareDigest(_:from:sourceView:)`
+
+Share digest via UIActivityViewController.
+
+**Parameters:**
+- `digest`: MorningDigest to share
+- `viewController`: Presenting view controller
+- `sourceView`: Optional source for iPad popover
+
+**Example:**
+```swift
+delivery.shareDigest(digest, from: self, sourceView: button)
+```
+
+#### `exportAsMarkdown(_:to:) async throws -> URL`
+
+Export digest as markdown file.
+
+**Parameters:**
+- `digest`: MorningDigest to export
+- `destinationURL`: Optional destination (default: Documents)
+
+**Returns:** URL of exported file
+
+**Example:**
+```swift
+let url = try await delivery.exportAsMarkdown(digest)
+```
+
+#### `cancelScheduledNotifications()`
+
+Cancel all pending digest notifications.
+
+**Example:**
+```swift
+delivery.cancelScheduledNotifications()
+```
+
 ## Configuration Options
 
 ### Preset Configurations
@@ -292,7 +445,71 @@ DreamflowConfig.IncludeFields(
 
 ## Integration TODOs
 
-### 1. Background Task Scheduling
+### 1. Notification Setup
+
+**Location:** `DigestDelivery.swift`
+
+**Info.plist Configuration:**
+
+Add notification capability to your app's Info.plist:
+
+```xml
+<key>UIBackgroundModes</key>
+<array>
+    <string>remote-notification</string>
+</array>
+```
+
+**App Initialization:**
+
+```swift
+import UIKit
+import UserNotifications
+
+@main
+class AppDelegate: UIResponder, UIApplicationDelegate {
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+
+        // Initialize DigestDelivery
+        let delivery = DigestDelivery.shared
+
+        // Request notification permissions on first launch
+        Task {
+            await delivery.requestNotificationPermission()
+        }
+
+        return true
+    }
+}
+```
+
+**SwiftUI App Integration:**
+
+```swift
+import SwiftUI
+
+@main
+struct CodexifyApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .onAppear {
+                    Task {
+                        await DigestDelivery.shared.requestNotificationPermission()
+                    }
+                }
+        }
+    }
+}
+```
+
+### 2. Background Task Scheduling
 
 **Location:** `DreamflowRunner.swift:320`
 
@@ -351,7 +568,7 @@ func scheduleNextRun() throws {
 }
 ```
 
-### 2. Persistent Storage
+### 3. Persistent Storage
 
 **Location:** `DreamflowRunner.swift:151`
 
@@ -401,7 +618,7 @@ class SQLiteDreamflowStorage: DreamflowStorageProtocol {
 }
 ```
 
-### 3. Connector Implementations
+### 4. Connector Implementations
 
 **Email Connector**
 ```swift
@@ -574,13 +791,15 @@ xcodebuild test -scheme Codexify \
 
 ## Roadmap
 
+- [x] **Smart notifications** (insights worth acting on) ✅
+- [x] **Export to journal apps** (markdown format) ✅
+- [x] **Sharing digests** via activity sheet ✅
 - [ ] CloudKit sync for cross-device access
 - [ ] Voice summary playback (read digest aloud)
 - [ ] Interactive reflection (ask follow-up questions)
 - [ ] Trend visualization (graphs over time)
-- [ ] Smart notifications (insights worth acting on)
-- [ ] Export to journal apps (Day One, etc.)
-- [ ] Sharing digests with trusted contacts
+- [ ] Advanced notification actions (mark as read, archive)
+- [ ] Widget support for home screen digest preview
 
 ---
 
