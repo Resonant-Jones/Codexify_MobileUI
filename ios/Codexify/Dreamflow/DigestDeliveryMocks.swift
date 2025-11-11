@@ -201,8 +201,16 @@ class MockBackgroundTaskRequest: BackgroundTaskRequestProtocol {
     var requiresNetworkConnectivity: Bool = false
     var requiresExternalPower: Bool = false
 
-    init(identifier: String) {
+    init(identifier: String, earliestBeginDate: Date? = nil) {
         self.identifier = identifier
+        self.earliestBeginDate = earliestBeginDate
+    }
+}
+
+/// Mock implementation of BackgroundTaskRequestFactory
+struct MockBackgroundTaskRequestFactory: BackgroundTaskRequestFactory {
+    func makeRequest(identifier: String, earliestBeginDate: Date?) -> BackgroundTaskRequestProtocol {
+        MockBackgroundTaskRequest(identifier: identifier, earliestBeginDate: earliestBeginDate)
     }
 }
 
@@ -342,6 +350,7 @@ extension DigestDeliveryManager {
         taskScheduler: MockBackgroundTaskScheduler = MockBackgroundTaskScheduler(),
         storage: MockDigestStorage = MockDigestStorage(),
         generator: MorningDigestGenerator? = nil,
+        requestFactory: BackgroundTaskRequestFactory = MockBackgroundTaskRequestFactory(),
         config: DigestDeliveryConfig = .default
     ) -> DigestDeliveryManager {
         let mockGenerator = generator ?? MockMorningDigestGenerator()
@@ -351,6 +360,7 @@ extension DigestDeliveryManager {
             taskScheduler: taskScheduler,
             storage: storage,
             generator: mockGenerator,
+            requestFactory: requestFactory,
             config: config
         )
     }

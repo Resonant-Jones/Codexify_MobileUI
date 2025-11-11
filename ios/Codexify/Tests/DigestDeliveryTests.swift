@@ -350,6 +350,7 @@ class DigestDeliveryTests: XCTestCase {
             taskScheduler: nil,
             storage: mockStorage,
             generator: mockGenerator,
+            requestFactory: MockBackgroundTaskRequestFactory(),
             config: .default
         )
 
