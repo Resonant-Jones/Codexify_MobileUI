@@ -790,8 +790,8 @@ class SensorAggregator {
         async let health = fetchHealth()
         async let device = fetchDeviceState()
 
-        // Create snapshot with timeout
-        let snapshot = try await withThrowingTaskGroup(of: Void.self) { group in
+        // Wait for collection with timeout
+        try await withThrowingTaskGroup(of: Void.self) { group in
             // Add timeout task
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(self.config.timeout * 1_000_000_000))
@@ -806,21 +806,21 @@ class SensorAggregator {
             // Wait for first to complete
             try await group.next()
             group.cancelAll()
-
-            // Build snapshot
-            let loc = try? await location
-            let act = try? await activity
-            let hlt = try? await health
-            let dev = await device
-
-            return SensorSnapshot(
-                timestamp: Date(),
-                location: loc,
-                activity: act,
-                healthMetrics: hlt,
-                deviceState: dev
-            )
         }
+
+        // Build snapshot after task group completes
+        let loc = try? await location
+        let act = try? await activity
+        let hlt = try? await health
+        let dev = await device
+
+        let snapshot = SensorSnapshot(
+            timestamp: Date(),
+            location: loc,
+            activity: act,
+            healthMetrics: hlt,
+            deviceState: dev
+        )
 
         let duration = Date().timeIntervalSince(startTime)
         lastSnapshot = snapshot
