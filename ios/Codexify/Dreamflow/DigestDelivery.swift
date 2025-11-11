@@ -159,6 +159,11 @@ protocol BackgroundTaskRequestProtocol {
     var earliestBeginDate: Date? { get set }
 }
 
+/// Protocol for constructing background task requests
+protocol BackgroundTaskRequestFactory {
+    func makeRequest(identifier: String, earliestBeginDate: Date?) -> BackgroundTaskRequestProtocol
+}
+
 /// Protocol for digest storage operations (mockable)
 protocol DigestStorageProtocol {
     func save(_ digest: MorningDigest) async throws
@@ -253,8 +258,9 @@ class RealBackgroundTask: BackgroundTaskProtocol {
 class RealBackgroundTaskRequest: BackgroundTaskRequestProtocol {
     let request: BGProcessingTaskRequest
 
-    init(identifier: String) {
+    init(identifier: String, earliestBeginDate: Date? = nil) {
         self.request = BGProcessingTaskRequest(identifier: identifier)
+        self.request.earliestBeginDate = earliestBeginDate
     }
 
     var identifier: String {
@@ -267,7 +273,33 @@ class RealBackgroundTaskRequest: BackgroundTaskRequestProtocol {
         set { request.earliestBeginDate = newValue }
     }
 }
+
+/// Real implementation of BackgroundTaskRequestFactory
+@available(iOS 13.0, *)
+struct RealBackgroundTaskRequestFactory: BackgroundTaskRequestFactory {
+    func makeRequest(identifier: String, earliestBeginDate: Date?) -> BackgroundTaskRequestProtocol {
+        RealBackgroundTaskRequest(identifier: identifier, earliestBeginDate: earliestBeginDate)
+    }
+}
 #endif
+
+/// Stub implementation for BackgroundTaskRequest (iOS <13 fallback)
+class StubBackgroundTaskRequest: BackgroundTaskRequestProtocol {
+    var identifier: String
+    var earliestBeginDate: Date?
+
+    init(identifier: String, earliestBeginDate: Date? = nil) {
+        self.identifier = identifier
+        self.earliestBeginDate = earliestBeginDate
+    }
+}
+
+/// Stub factory for cases where BackgroundTasks is unavailable
+struct StubBackgroundTaskRequestFactory: BackgroundTaskRequestFactory {
+    func makeRequest(identifier: String, earliestBeginDate: Date?) -> BackgroundTaskRequestProtocol {
+        StubBackgroundTaskRequest(identifier: identifier, earliestBeginDate: earliestBeginDate)
+    }
+}
 
 /// In-memory storage for digests
 class InMemoryDigestStorage: DigestStorageProtocol {
@@ -337,6 +369,7 @@ final class DigestDeliveryManager {
     private let taskScheduler: BackgroundTaskSchedulerProtocol?
     private let storage: DigestStorageProtocol
     private let generator: MorningDigestGenerator
+    private let requestFactory: BackgroundTaskRequestFactory
     private let config: DigestDeliveryConfig
 
     // Background task identifier
@@ -350,18 +383,21 @@ final class DigestDeliveryManager {
     ///   - taskScheduler: Background task scheduler (optional, nil for iOS <13 or mocks)
     ///   - storage: Storage for digest persistence
     ///   - generator: Generator for creating digests
+    ///   - requestFactory: Factory for creating background task requests
     ///   - config: Delivery configuration
     init(
         notificationCenter: NotificationCenterProtocol,
         taskScheduler: BackgroundTaskSchedulerProtocol? = nil,
         storage: DigestStorageProtocol,
         generator: MorningDigestGenerator,
+        requestFactory: BackgroundTaskRequestFactory,
         config: DigestDeliveryConfig = .default
     ) {
         self.notificationCenter = notificationCenter
         self.taskScheduler = taskScheduler
         self.storage = storage
         self.generator = generator
+        self.requestFactory = requestFactory
         self.config = config
 
         print("📬 [DigestDelivery] Initialized (enabled: \(config.enabled), hour: \(config.deliveryHour))")
@@ -385,20 +421,19 @@ final class DigestDeliveryManager {
         // Cancel any existing scheduled tasks
         scheduler.cancel(taskRequestWithIdentifier: Self.backgroundTaskIdentifier)
 
-        // Create new task request
-        #if canImport(BackgroundTasks)
-        if #available(iOS 13.0, *) {
-            let request = RealBackgroundTaskRequest(identifier: Self.backgroundTaskIdentifier)
-            request.earliestBeginDate = calculateNextDeliveryDate()
+        // Create new task request using factory
+        let nextDeliveryDate = calculateNextDeliveryDate()
+        let request = requestFactory.makeRequest(
+            identifier: Self.backgroundTaskIdentifier,
+            earliestBeginDate: nextDeliveryDate
+        )
 
-            do {
-                try scheduler.submit(request)
-                print("✅ [DigestDelivery] Scheduled for \(request.earliestBeginDate!)")
-            } catch {
-                throw DigestDeliveryError.taskSchedulingFailed(error)
-            }
+        do {
+            try scheduler.submit(request)
+            print("✅ [DigestDelivery] Scheduled for \(request.earliestBeginDate!)")
+        } catch {
+            throw DigestDeliveryError.taskSchedulingFailed(error)
         }
-        #endif
     }
 
     /// Cancel scheduled daily digest
@@ -610,13 +645,17 @@ extension DigestDeliveryManager {
 
         #if canImport(BackgroundTasks)
         let taskScheduler: BackgroundTaskSchedulerProtocol?
+        let requestFactory: BackgroundTaskRequestFactory
         if #available(iOS 13.0, *) {
             taskScheduler = RealBackgroundTaskScheduler()
+            requestFactory = RealBackgroundTaskRequestFactory()
         } else {
             taskScheduler = nil
+            requestFactory = StubBackgroundTaskRequestFactory() // Fallback for older iOS
         }
         #else
         let taskScheduler: BackgroundTaskSchedulerProtocol? = nil
+        let requestFactory: BackgroundTaskRequestFactory = StubBackgroundTaskRequestFactory()
         #endif
 
         let storage = InMemoryDigestStorage.shared
@@ -626,6 +665,7 @@ extension DigestDeliveryManager {
             taskScheduler: taskScheduler,
             storage: storage,
             generator: generator,
+            requestFactory: requestFactory,
             config: config
         )
     }
