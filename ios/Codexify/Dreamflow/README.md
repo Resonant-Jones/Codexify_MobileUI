@@ -584,6 +584,358 @@ xcodebuild test -scheme Codexify \
 
 ---
 
-**Built with ❤️ by Codexify:Scout**
+## Phase Three: Digest Delivery System 📬
+
+### Overview
+
+The **Digest Delivery System** automates the delivery of Morning Digests to users through notifications and background scheduling. It seamlessly integrates with the Dreamflow runtime to provide timely, actionable insights from your daily reflections.
+
+### Quick Start: Digest Delivery
+
+```swift
+import Foundation
+
+// Initialize delivery manager
+let generator = MorningDigestGenerator(modelRouter: router)
+let deliveryManager = DigestDeliveryManager.makeReal(
+    generator: generator,
+    config: .default
+)
+
+// Manual delivery
+Task {
+    do {
+        let digest = try await deliveryManager.deliverDigestNow()
+        print("✅ Delivered: \(digest.headline)")
+    } catch {
+        print("❌ Delivery failed: \(error)")
+    }
+}
+
+// Schedule daily delivery at 8am
+try deliveryManager.scheduleDailyDigest()
+```
+
+### Architecture: Digest Delivery
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   DigestDeliveryManager                      │
+│                                                               │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌────────────┐ │
+│  │ Notification    │  │ Background Task  │  │  Storage   │ │
+│  │ Center          │  │ Scheduler        │  │            │ │
+│  └─────────────────┘  └──────────────────┘  └────────────┘ │
+│           │                     │                    │       │
+│           └─────────────────────┴────────────────────┘       │
+│                             │                                │
+│                   ┌─────────▼─────────┐                     │
+│                   │ MorningDigest     │                     │
+│                   │ Generator         │                     │
+│                   └───────────────────┘                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Features
+
+✅ **Local Notifications**
+- Rich notification content with digest summaries
+- Custom notification categories with actions
+- User info for deep linking to full digest view
+
+✅ **Background Scheduling**
+- Automated daily delivery via BGTaskScheduler
+- Configurable delivery time (default: 8am)
+- Battery and charging requirements
+
+✅ **Rate Limiting**
+- Prevents notification spam
+- Configurable minimum interval between deliveries
+- Graceful error messages with next available time
+
+✅ **Mock Architecture**
+- Full protocol-based DI for testing
+- Mock implementations for all iOS APIs
+- Graceful degradation in simulator
+
+✅ **Error Handling**
+- Comprehensive error types
+- Localized error descriptions
+- Recovery suggestions
+
+### Configuration Options
+
+```swift
+// Default configuration (8am, full summary)
+let defaultConfig = DigestDeliveryConfig.default
+
+// Minimal configuration (9am, no summary)
+let minimalConfig = DigestDeliveryConfig.minimal
+
+// Custom configuration
+let customConfig = DigestDeliveryConfig(
+    deliveryHour: 7,                    // 7am
+    allowOnBattery: true,
+    includeSummary: true,
+    notificationTitle: "Good Morning ☀️",
+    notificationCategory: "DIGEST",
+    enabled: true,
+    minimumDeliveryInterval: 3600       // 1 hour
+)
+```
+
+### AppDelegate Integration
+
+```swift
+import UIKit
+import BackgroundTasks
+
+@main
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    var deliveryManager: DigestDeliveryManager?
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        // Initialize delivery system
+        let router = ModelRouter(preferences: .defaultConfiguration())
+        let generator = MorningDigestGenerator(modelRouter: router)
+
+        deliveryManager = DigestDeliveryManager.makeReal(
+            generator: generator,
+            config: .default
+        )
+
+        // Register background task
+        deliveryManager?.registerBackgroundTask()
+
+        // Schedule daily delivery
+        try? deliveryManager?.scheduleDailyDigest()
+
+        return true
+    }
+}
+```
+
+### Info.plist Configuration
+
+Add these keys for notifications and background tasks:
+
+```xml
+<key>BGTaskSchedulerPermittedIdentifiers</key>
+<array>
+    <string>com.codexify.dailyDigest</string>
+</array>
+
+<key>UIBackgroundModes</key>
+<array>
+    <string>processing</string>
+</array>
+
+<key>NSUserNotificationsUsageDescription</key>
+<string>Codexify sends you daily digests with insights from your reflections.</string>
+```
+
+### SwiftUI Integration Example
+
+```swift
+import SwiftUI
+
+struct DigestView: View {
+    @StateObject private var viewModel = DigestViewModel()
+
+    var body: some View {
+        VStack(spacing: Spacing.lg) {
+            if let digest = viewModel.currentDigest {
+                DigestCard(digest: digest)
+            }
+
+            Button("Refresh Digest") {
+                Task {
+                    await viewModel.deliverNow()
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(viewModel.isLoading)
+
+            if let error = viewModel.error {
+                Text(error.localizedDescription)
+                    .font(TextStyle.caption)
+                    .foregroundColor(ColorTokens.error)
+            }
+        }
+        .padding(Spacing.lg)
+    }
+}
+```
+
+### Error Handling
+
+```swift
+do {
+    let digest = try await manager.deliverDigestNow()
+    print("✅ Delivered: \(digest.headline)")
+
+} catch DigestDeliveryError.notificationDenied {
+    // Prompt user to enable notifications
+    showNotificationSettings()
+
+} catch DigestDeliveryError.rateLimitExceeded(let nextAvailable) {
+    // Show cooldown message
+    print("⏳ Next delivery available at: \(nextAvailable)")
+
+} catch DigestDeliveryError.generationFailed(let error) {
+    // Log generation error
+    print("❌ Generation failed: \(error)")
+
+} catch {
+    print("❌ Unexpected error: \(error)")
+}
+```
+
+### Testing
+
+The Digest Delivery system includes comprehensive tests (36+ test cases):
+
+```bash
+# Run all digest delivery tests
+xcodebuild test \
+  -scheme Codexify \
+  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -only-testing:CodexifyTests/DigestDeliveryTests
+```
+
+**Test Coverage:**
+- ✅ Configuration validation
+- ✅ Immediate delivery flow
+- ✅ Notification sending
+- ✅ Background task scheduling
+- ✅ Rate limiting
+- ✅ Error handling
+- ✅ Mock implementations
+- ✅ Storage operations
+- ✅ Integration tests
+- ✅ Performance benchmarks
+
+### Mock Architecture
+
+All iOS APIs are mockable for testing:
+
+```swift
+// Create mocked manager
+let mockCenter = MockNotificationCenter()
+let mockScheduler = MockBackgroundTaskScheduler()
+let mockStorage = MockDigestStorage()
+
+let manager = DigestDeliveryManager.makeMock(
+    notificationCenter: mockCenter,
+    taskScheduler: mockScheduler,
+    storage: mockStorage,
+    config: .default
+)
+
+// Test delivery
+let digest = try await manager.deliverDigestNow()
+
+// Verify behavior
+XCTAssertEqual(mockCenter.sentNotifications.count, 1)
+XCTAssertEqual(mockStorage.savedDigests.count, 1)
+```
+
+### API Reference: Digest Delivery
+
+#### `DigestDeliveryManager`
+
+```swift
+// Initialization
+init(
+    notificationCenter: NotificationCenterProtocol,
+    taskScheduler: BackgroundTaskSchedulerProtocol?,
+    storage: DigestStorageProtocol,
+    generator: MorningDigestGenerator,
+    config: DigestDeliveryConfig = .default
+)
+
+// Static factories
+static func makeReal(
+    generator: MorningDigestGenerator,
+    config: DigestDeliveryConfig = .default
+) -> DigestDeliveryManager
+
+static func makeMock(...) -> DigestDeliveryManager
+
+// Methods
+func scheduleDailyDigest() throws
+func cancelScheduledDigest()
+func deliverDigestNow(days: Int = 7) async throws -> MorningDigest
+func registerBackgroundTask()
+```
+
+#### `DigestDeliveryConfig`
+
+```swift
+struct DigestDeliveryConfig: Codable, Equatable {
+    let deliveryHour: Int                   // 0-23
+    let allowOnBattery: Bool
+    let includeSummary: Bool
+    let notificationTitle: String
+    let notificationCategory: String
+    let enabled: Bool
+    let minimumDeliveryInterval: TimeInterval
+
+    static let `default`: DigestDeliveryConfig
+    static let minimal: DigestDeliveryConfig
+}
+```
+
+#### `DigestDeliveryError`
+
+```swift
+enum DigestDeliveryError: Error, LocalizedError {
+    case notificationDenied
+    case notificationSettingsUnavailable
+    case taskSchedulingFailed(Error)
+    case generationFailed(Error)
+    case storageUnavailable
+    case deliveryDisabled
+    case rateLimitExceeded(nextAvailable: Date)
+    case deviceNotReady
+    case unknown(Error)
+}
+```
+
+### Troubleshooting
+
+**Notifications not appearing:**
+1. Check notification permissions in Settings
+2. Verify notification was sent: `mockCenter.sentNotifications`
+3. Check Do Not Disturb settings
+
+**Background tasks not running:**
+1. Test on physical device (simulator is unreliable)
+2. Verify `Info.plist` configuration
+3. Force task in debugger: `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.codexify.dailyDigest"]`
+
+**Rate limit errors:**
+1. Check last delivery time: `storage.getLastDeliveryDate()`
+2. Adjust `minimumDeliveryInterval` for testing
+
+### Roadmap: Phase Three Extensions
+
+- [ ] CloudKit sync for multi-device digest history
+- [ ] Rich notification content extensions with previews
+- [ ] Interactive notification actions (mark read, share)
+- [ ] Smart delivery time based on wake patterns
+- [ ] Adaptive frequency (skip if no new content)
+- [ ] Do Not Disturb integration
+- [ ] Delivery analytics and metrics
+- [ ] Full-text search for digest history
+- [ ] Export digest history (JSON/Markdown)
+
+---
+
+**Built with ❤️ and ☕️ by Codexify:Scout**
 
 Phase Two: Dreamflow Runtime Complete 🌙
+Phase Three: Digest Delivery Complete 📬
