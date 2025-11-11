@@ -496,14 +496,14 @@ class HealthDataCollector {
         try await healthStore.requestAuthorization(toShare: [], read: types)
     }
 
-    func getCurrentMetrics() async throws -> SensorSnapshot.HealthMetrics {
+    func getCurrentMetrics() async throws -> HealthMetrics {
         // Query heart rate
         let heartRate = try await queryMostRecentSample(for: .heartRate)
 
         // Query steps today
         let steps = try await queryTodaySum(for: .stepCount)
 
-        return SensorSnapshot.HealthMetrics(
+        return HealthMetrics(
             heartRate: heartRate,
             steps: Int(steps),
             distance: nil,
@@ -521,7 +521,7 @@ import CoreMotion
 class ActivityDetector {
     private let motionManager = CMMotionActivityManager()
 
-    func getCurrentActivity() async throws -> SensorSnapshot.ActivityType {
+    func getCurrentActivity() async throws -> ActivityType {
         return try await withCheckedThrowingContinuation { continuation in
             motionManager.startActivityUpdates(to: .main) { activity in
                 guard let activity = activity else {
@@ -529,7 +529,7 @@ class ActivityDetector {
                     return
                 }
 
-                let type: SensorSnapshot.ActivityType
+                let type: ActivityType
                 if activity.walking {
                     type = .walking
                 } else if activity.running {

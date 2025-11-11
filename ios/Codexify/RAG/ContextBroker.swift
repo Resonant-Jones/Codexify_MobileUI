@@ -96,71 +96,11 @@ struct MemoryFragment: Codable, Identifiable, Equatable {
     }
 }
 
-/// Location snapshot for memory context
-struct LocationSnapshot: Codable, Equatable {
-    let latitude: Double
-    let longitude: Double
-    let altitude: Double?
-    let horizontalAccuracy: Double
-    let timestamp: Date
-    let placeName: String?
+// MARK: - Sensor Data Types
+// Note: LocationSnapshot, SensorSnapshot, ActivityType, HealthMetrics, and DeviceState
+// are defined in Sensors/SensorAggregator.swift and shared across the module
 
-    init(from location: CLLocation, placeName: String? = nil) {
-        self.latitude = location.coordinate.latitude
-        self.longitude = location.coordinate.longitude
-        self.altitude = location.altitude
-        self.horizontalAccuracy = location.horizontalAccuracy
-        self.timestamp = location.timestamp
-        self.placeName = placeName
-    }
-}
-
-/// Real-time sensor data snapshot
-struct SensorSnapshot: Codable, Equatable {
-    let timestamp: Date
-    let location: LocationSnapshot?
-    let activity: ActivityType?
-    let healthMetrics: HealthMetrics?
-    let deviceState: DeviceState?
-
-    enum ActivityType: String, Codable {
-        case stationary
-        case walking
-        case running
-        case cycling
-        case automotive
-        case unknown
-    }
-
-    struct HealthMetrics: Codable, Equatable {
-        let heartRate: Double?
-        let steps: Int?
-        let distance: Double?
-        let activeEnergyBurned: Double?
-        let standHours: Int?
-    }
-
-    struct DeviceState: Codable, Equatable {
-        let batteryLevel: Float?
-        let lowPowerMode: Bool
-        let thermalState: String?
-        let networkType: String?
-    }
-
-    init(
-        timestamp: Date = Date(),
-        location: LocationSnapshot? = nil,
-        activity: ActivityType? = nil,
-        healthMetrics: HealthMetrics? = nil,
-        deviceState: DeviceState? = nil
-    ) {
-        self.timestamp = timestamp
-        self.location = location
-        self.activity = activity
-        self.healthMetrics = healthMetrics
-        self.deviceState = deviceState
-    }
-}
+// MARK: - Context Packet
 
 /// Complete context packet for RAG prompting
 struct ContextPacket: Codable {
@@ -524,18 +464,18 @@ class SensorAggregator: SensorAggregatorProtocol {
                 placeName: "San Francisco, CA"
             ),
             activity: .walking,
-            healthMetrics: SensorSnapshot.HealthMetrics(
+            healthMetrics: HealthMetrics(
                 heartRate: 72.0,
                 steps: 5432,
                 distance: 3.2,
                 activeEnergyBurned: 245.5,
                 standHours: 8
             ),
-            deviceState: SensorSnapshot.DeviceState(
+            deviceState: DeviceState(
                 batteryLevel: 0.75,
                 lowPowerMode: false,
-                thermalState: "nominal",
-                networkType: "WiFi"
+                thermalState: .nominal,
+                networkType: .wifi
             )
         )
 
