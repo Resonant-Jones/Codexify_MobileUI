@@ -411,7 +411,8 @@ class ContextBrokerTests: XCTestCase {
 
         // Then: Should still succeed with empty sensors
         XCTAssertNotNil(context.sensorSnapshot)
-        XCTAssertFalse(context.hasData) // No sensor data
+        XCTAssertFalse(context.sensorSnapshot.hasData) // No sensor data
+        XCTAssertTrue(context.hasData) // Context has data from other sources
         XCTAssertFalse(context.threadHistory.isEmpty) // Other sources still work
     }
 
@@ -429,6 +430,7 @@ class ContextBrokerTests: XCTestCase {
         XCTAssertTrue(context.semanticMemory.isEmpty)
         XCTAssertFalse(context.sensorSnapshot.hasData)
         XCTAssertTrue(context.isEmpty)
+        XCTAssertFalse(context.hasData) // No data from any source
     }
 
     func testBuildContext_ThreadStorageFailure_ContinuesGracefully() async throws {

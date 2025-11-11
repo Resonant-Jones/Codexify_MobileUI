@@ -206,6 +206,11 @@ struct ContextPacket: Codable {
     var isEmpty: Bool {
         return threadHistory.isEmpty && semanticMemory.isEmpty && sensorSnapshot.location == nil
     }
+
+    /// Check if context has data
+    var hasData: Bool {
+        return !isEmpty
+    }
 }
 
 // MARK: - Error Types
